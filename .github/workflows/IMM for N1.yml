@@ -164,7 +164,6 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         body: |
           基于immortalwrt openwrt构建
-          📅 发布时间: ${{ env.PACKAGED_OUTPUTDATE }}
           📥 首次使用建议全新刷写
           📌 基本信息
           IP: 192.168.50.3
