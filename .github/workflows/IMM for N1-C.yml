@@ -10,6 +10,8 @@ env:
   DIY_SH: N1/diy.sh
   FILES: N1/files
   TZ: Asia/Shanghai
+  CCACHE_DIR: /tmp/ccache
+  UPLOAD_WETRANSFER: false
 
 jobs:
   build:
@@ -18,74 +20,83 @@ jobs:
     steps:
     - name: 检查服务器配置
       run: |
-        echo "⚠️ 警告：编译插件需谨慎选择，注意CPU性能"
-        echo "推荐避免选择Node.js相关插件"
-        echo "--------------------------CPU信息--------------------------"
-        echo "CPU物理数量:$(cat /proc/cpuinfo| grep "physical id"| sort| uniq| wc -l)"
-        echo "CPU核心信息：$(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c)"
-        echo "--------------------------内存信息--------------------------"
+        echo "🖥️ CPU信息"
+        echo "物理CPU数量: $(cat /proc/cpuinfo| grep "physical id"| sort| uniq| wc -l)"
+        echo "CPU核心信息: $(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c)"
+        echo "💾 内存信息"
         sudo lshw -short -C memory | grep GiB
-        echo "--------------------------硬盘信息--------------------------"
-        echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)"
+        echo "💽 磁盘信息"
         df -Th
-        
-    - name: 优化磁盘空间
-      uses: "hugoalh/disk-space-optimizer-ghaction@v0.8.1"
-      with:
-        operate_sudo: "True"
-        docker_prune: "True"
-        docker_clean: "True"
-        apt_prune: "True"
-        apt_clean: "True"
-        npm_prune: "True"
-        os_swap: "True"
 
-    - name: 最大化构建空间
+    - name: 清理系统空间
       uses: easimon/maximize-build-space@master
-      with: 
-        root-reserve-mb: 10240
-        swap-size-mb: 1
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-        remove-docker-images: 'true'
+      with:
+        root-reserve-mb: 8192
+        swap-size-mb: 1024
+        temp-reserve-mb: 1024
+        remove-dotnet: true
+        remove-android: true
+        remove-haskell: true
+        remove-docker-images: true
+        # 移除更多不需要的内容
+        remove-codeql: true
+        remove-large-packages: true
 
-    - name: 检查磁盘空间
-      run: df -hT
-        
     - name: 检出代码
-      uses: actions/checkout@main
-      
-    - name: 初始化环境
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: | 
-        sudo -E apt-get -qq update -y
-        sudo -E apt-get -qq install -y build-essential ccache
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
-        sudo chown $USER:$GROUPS $GITHUB_WORKSPACE
-        
-    - name: 克隆源代码
-      working-directory: ./
-      run: |
-        git clone $REPO_URL -b $REPO_BRANCH openwrt --depth=1
-        
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    # 使用改进的缓存策略
     - name: 缓存编译
       uses: stupidloud/cachewrtbuild@main
       with:
-        ccache: 'true'
-        mixkey: N1-IMM-${{ env.REPO_BRANCH }}
+        ccache: true
+        mixkey: N1-${{ env.REPO_BRANCH }}-${{ github.sha }}
         prefix: ${{ github.workspace }}/openwrt
-        ccache-size: 10G
+        ccache-size: 15G  # 增加缓存大小
+        
+    - name: 初始化环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo -E apt-get -qq update -y
+        # 安装必要的编译工具和依赖
+        sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+        git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+        libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
+        mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools \
+        libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
+        vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+        
+        # 配置ccache
+        ccache -M 15G
+        ccache -o compression=true
+        ccache -o compression_level=9
+
+    - name: 克隆源代码
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt --depth=1
+        cd openwrt
+        echo "WORKDIR=$PWD" >> $GITHUB_ENV
         
     - name: 更新并安装feeds
       working-directory: ./openwrt
       run: |
+        echo "当前目录: $PWD"
+        # 优化feeds更新过程
         ./scripts/feeds update -a -f
         ./scripts/feeds install -a -f
-        
+        # 开启多线程编译
+        sed -i 's/jobs:=1/jobs:=$(nproc)/g' include/host-build.mk
+        sed -i 's/jobs:=1/jobs:=$(nproc)/g' include/package.mk
+
     - name: 加载自定义配置
       run: |
         [ -e $FILES ] && mv $FILES openwrt/files
@@ -93,21 +104,34 @@ jobs:
         chmod +x $DIY_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_SH
+        # 启用ccache
+        echo 'CONFIG_CCACHE=y' >> .config
 
     - name: 下载软件包
       working-directory: ./openwrt
+      id: package
       run: |
         make defconfig
-        make download -j$(nproc)
+        make download -j16 || make download -j8 V=s
         find dl -size -1024c -exec rm -f {} \;
         
     - name: 编译固件
+      id: compile
       run: |
         cd openwrt
-        make -j$(nproc) || make -j$((`nproc`/2)) || make -j1 V=s
+        echo -e "开始编译..."
+        make -j$(($(nproc) + 1)) || make -j$(($(nproc)/2)) || make -j1 V=s
         echo "compile_status=success" >> $GITHUB_ENV
         
-    - name: 打包OpenWrt固件
+        # 输出编译结果统计
+        echo "===== 编译结果统计 ====="
+        echo "已编译的包数量: $(find bin/packages/ -type f -name '*.ipk' | wc -l)"
+        echo "固件大小: $(du -h bin/targets/*/*/*.tar.gz 2>/dev/null | awk '{print $1}')"
+        echo "可用磁盘空间: $(df -h | grep '/dev/root' | awk '{print $4}')"
+        echo "ccache 统计:"
+        ccache -s
+
+    - name: 打包固件
       if: ${{ env.compile_status }} == 'success' && !cancelled()
       uses: unifreq/openwrt_packit@master
       env:
@@ -119,7 +143,7 @@ jobs:
         SW_FLOWOFFLOAD: 0
         SFE_FLOW: 0
 
-    - name: 上传固件到Release
+    - name: 发布固件
       uses: ncipollo/release-action@main
       if: ${{ env.PACKAGED_STATUS == 'success' }} && !cancelled()
       with:
@@ -129,16 +153,20 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         body: |
           基于immortalwrt openwrt构建
-          首次使用建议全新刷写
-          * 基本信息
-          IP: 192.168.50.3
-          账户: root
-          密码: password
+          构建时间: ${{ env.PACKAGED_OUTPUTDATE }}
           
-    - name: 删除旧的Release
+          📥 首次使用建议全新刷写
+          
+          📌 基本信息:
+          - IP: 192.168.50.3
+          - 账户: root
+          - 密码: password
+
+    - name: 清理旧版本
       uses: dev-drprasad/delete-older-releases@master
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         keep_latest: 5
-        delete_tags : true
+        delete_tags: true
