@@ -128,7 +128,7 @@ jobs:
       uses: ncipollo/release-action@main
       if: ${{ env.PACKAGED_STATUS == 'success' }} && !cancelled()
       with:
-        tag: immortalwrt_N1_${{ env.PACKAGED_OUTPUTDATE }}
+        tag: immortalwrt_N1_${{ env.PACKAGED_OUTPUTDATE }}C
         artifacts: /opt/openwrt_packit/output/*
         allowUpdates: true
         token: ${{ secrets.GITHUB_TOKEN }}
