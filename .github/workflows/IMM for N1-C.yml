@@ -82,7 +82,7 @@ jobs:
       uses: stupidloud/cachewrtbuild@main
       with:
         ccache: 'true'
-        mixkey: N1-IMM-${{ env.REPO_BRANCH }}
+        mixkey: N1-${{ env.REPO_BRANCH }}
         prefix: ${{ github.workspace }}/openwrt
         
     - name: 更新并安装feeds
