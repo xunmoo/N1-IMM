@@ -1,0 +1,136 @@
+name: test
+
+on:
+  workflow_dispatch:
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-24.10
+  CONFIG_FILE: N1/.config
+  DIY_SH: N1/diy.sh
+  FILES: N1/files
+  TZ: Asia/Shanghai
+  CACHE_VERSION: 1
+  
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Free up space
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
+    - name: Initialize environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo -E apt-get -qq update -y
+        sudo -E apt-get -qq install -y ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+        git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+        libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
+        mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils \
+        rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          /workdir/openwrt/.ccache
+          /workdir/openwrt/build_dir/host
+          /workdir/openwrt/dl
+        key: openwrt-cache-${{ env.CACHE_VERSION }}-${{ github.run_id }}
+        restore-keys: |
+          openwrt-cache-${{ env.CACHE_VERSION }}-
+
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        git clone $REPO_URL -b $REPO_BRANCH --single-branch --depth=1 openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+    - name: Update & Install feeds
+      working-directory: ./openwrt
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Load custom config
+      run: |
+        [ -e $FILES ] && mv $FILES openwrt/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        chmod +x $DIY_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_SH
+
+    - name: Download package
+      working-directory: ./openwrt
+      run: |
+        make defconfig
+        make download -j$(nproc)
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: Compile firmware
+      id: compile
+      run: |
+        cd openwrt
+        echo "::set-output name=status::start"
+        make -j$(nproc) || make -j1 V=s
+        echo "::set-output name=status::success"
+        echo "::set-output name=date::$(date +"%Y.%m.%d")"
+
+    - name: Package armsr
+      if: steps.compile.outputs.status == 'success'
+      uses: unifreq/openwrt_packit@master
+      env:
+        OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
+        KERNEL_VERSION_NAME: 6.6.60
+        KERNEL_AUTO_LATEST: true
+        PACKAGE_SOC: diy
+        GZIP_IMGS: .xz
+        SCRIPT_DIY_PATH: N1/mk_s905d_n1.sh
+        WHOAMI: xunmoo
+        SW_FLOWOFFLOAD: 0
+        SFE_FLOW: 0
+        ENABLE_WIFI_K510: 0
+
+    - name: Upload firmware release
+      uses: softprops/action-gh-release@v1
+      if: inputs.release == 'true' && steps.compile.outputs.status == 'success'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: OpenWrt_${{ steps.compile.outputs.date }}
+        files: ${{ env.PACKAGED_OUTPUTPATH }}/*.img.xz
+        body: |
+          首次使用建议全新刷写
+          * 基本信息
+          IP: 192.168.50.3
+          账户: root
+          密码: password
+        
+    - name: Delete old releases
+      uses: dev-drprasad/delete-older-releases@v0.3.2
+      if: inputs.release == 'true'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        keep_latest: 5
+        delete_tags: true
