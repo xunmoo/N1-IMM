@@ -114,7 +114,7 @@ jobs:
         
     - name: 打包OpenWrt固件
       if: ${{ env.compile_status }} == 'success' && !cancelled()
-      uses: unifreq/openwrt_packit@master
+      uses: ophub/amlogic-s9xxx-openwrt@main
       env:
         OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/immortalwrt-armsr-armv8-generic-rootfs.tar.gz
         KERNEL_VERSION_NAME: 6.6.60
