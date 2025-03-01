@@ -100,12 +100,12 @@ jobs:
         SFE_FLOW: 0
 
     - name: Upload firmware to release
-      uses: softprops/action-gh-release@master
+      uses: softprops/action-gh-release@v2.1.0
       if: ${{ env.PACKAGED_STATUS == 'success' }} && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: OpenWrt_${{ env.PACKAGED_OUTPUTDATE }}
+        tag_name: immortalwrt_${{ env.PACKAGED_OUTPUTDATE }}
         files: ${{ env.PACKAGED_OUTPUTPATH }}/*.img.xz
         body: |
           基于immortalwrt openwrt构建
