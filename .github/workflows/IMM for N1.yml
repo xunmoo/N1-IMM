@@ -55,18 +55,19 @@ jobs:
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         
     - name: Update & Install feeds
-      working-directory: ./openwrt
       run: |
+        chmod +x $DIY_SH
+        cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
+        $GITHUB_WORKSPACE/$DIY_SH
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+    
     - name: Load custom config
       run: |
         [ -e $FILES ] && mv $FILES openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_SH
 
     - name: Download package
       working-directory: ./openwrt
