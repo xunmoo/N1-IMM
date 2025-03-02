@@ -95,7 +95,7 @@ jobs:
         KERNEL_AUTO_LATEST: true
         PACKAGE_SOC: diy
         GZIP_IMGS: .xz
-        SCRIPT_DIY_PATH: N1/mk_s905d n1.sh
+        SCRIPT_DIY_PATH: N1/mk_s905d_n1.sh
         WHOAMI: xunmoo
         SW_FLOWOFFLOAD: 0
         SFE_FLOW: 0
