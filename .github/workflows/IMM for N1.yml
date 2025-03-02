@@ -29,7 +29,7 @@ jobs:
         large-packages: true
         docker-images: true
         swap-storage: true
-      
+
     - name: Initialize environment
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -47,13 +47,13 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
-        
+    
     - name: Clone source code
       working-directory: /workdir
       run: |
         git clone $REPO_URL -b $REPO_BRANCH --single-branch --depth=1 openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-        
+    
     - name: Update & Install feeds
       run: |
         chmod +x $DIY_SH
@@ -68,7 +68,7 @@ jobs:
       run: |
         [ -e $FILES ] && mv $FILES openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-
+    
     - name: Download package
       working-directory: ./openwrt
       run: |
@@ -76,7 +76,7 @@ jobs:
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
-        
+    
     - name: Compile the firmware
       run: |
         chmod -R 755 openwrt
