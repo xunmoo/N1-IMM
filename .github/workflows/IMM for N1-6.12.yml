@@ -1,4 +1,4 @@
-name: Build IMM for N1
+name: Build IMM for N1-6.12
 
 on:
   workflow_dispatch:
